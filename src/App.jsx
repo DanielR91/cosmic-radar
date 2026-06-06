@@ -93,6 +93,7 @@ export default function App() {
   const [logMessages, setLogMessages] = useState([]);
   const [isolatedTarget, setIsolatedTarget] = useState(null);
   const [showFullFleet, setShowFullFleet] = useState(false);
+  const [starlinkOnly, setStarlinkOnly] = useState(false);
 
   // Logging utility
   const addLog = useCallback((text, type = 'info') => {
@@ -174,17 +175,22 @@ export default function App() {
     return satellites.filter((sat) => {
       const name = (sat.OBJECT_NAME || "").toLowerCase();
 
-      // Priority 1: Show full fleet
+      // Priority 1: Starlink Isolation
+      if (starlinkOnly) {
+        return name.includes('starlink');
+      }
+
+      // Priority 2: Show full fleet
       if (showFullFleet) {
         return HIGH_VALUE_TARGETS.some(t => name.includes(t.search.toLowerCase()));
       }
 
-      // Priority 2: Single isolated target
+      // Priority 3: Single isolated target
       if (isolatedTarget) {
         return name.includes(isolatedTarget.search.toLowerCase());
       }
 
-      // Priority 3: Normal filters
+      // Priority 4: Normal filters
       const matchesSearch = name.includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
@@ -212,7 +218,7 @@ export default function App() {
 
       return true;
     });
-  }, [satellites, searchQuery, selectedFilter, isolatedTarget, showFullFleet]);
+  }, [satellites, searchQuery, selectedFilter, isolatedTarget, showFullFleet, starlinkOnly]);
 
   // Telemetry details representation
   const activeTelemetry = useMemo(() => {
@@ -468,12 +474,33 @@ export default function App() {
 
           {/* F: High-Value Targets Tracker */}
           <div className="mt-4 p-4 bg-slate-900/80 border border-slate-700/50 rounded-lg backdrop-blur-md shadow-xl text-left">
-            <div className="flex items-center justify-between mb-3 gap-2">
+            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
               <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400 font-mono">
-                🎯 High-Value Targets
+                🎯 Targets
               </h3>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5 flex-wrap">
                 <button
+                  onClick={() => {
+                    const nextState = !starlinkOnly;
+                    setStarlinkOnly(nextState);
+                    if (nextState) {
+                      setShowFullFleet(false);
+                      setIsolatedTarget(null);
+                      addLog('STARLINK ISOLATION MATRIX ENABLED.', 'success');
+                    } else {
+                      addLog('STARLINK ISOLATION MATRIX DISABLED.', 'info');
+                    }
+                  }}
+                  className={`text-[10px] px-2 py-0.5 font-mono rounded transition-all border cursor-pointer ${
+                    starlinkOnly 
+                      ? 'bg-amber-500/20 text-amber-400 border-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.3)] font-bold' 
+                      : 'bg-slate-950/40 text-slate-400 border-slate-700/50 hover:text-slate-200'
+                  }`}
+                >
+                  {starlinkOnly ? "🛰️ STARLINK ACTIVE" : "🛰️ STARLINK ONLY"}
+                </button>
+                <button
+                  disabled={starlinkOnly}
                   onClick={() => {
                     const nextState = !showFullFleet;
                     setShowFullFleet(nextState);
@@ -484,15 +511,17 @@ export default function App() {
                       addLog('FLEET VIEW ISOLATION DISABLED.', 'info');
                     }
                   }}
-                  className={`text-[10px] px-2 py-0.5 font-mono rounded transition-all border cursor-pointer ${
-                    showFullFleet 
-                      ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500 shadow-[0_0_6px_rgba(34,211,238,0.3)] font-bold' 
-                      : 'bg-slate-950/40 text-slate-400 border-slate-700/50 hover:text-slate-200'
+                  className={`text-[10px] px-2 py-0.5 font-mono rounded transition-all border ${
+                    starlinkOnly
+                      ? 'bg-slate-950/10 text-slate-600 border-transparent cursor-not-allowed opacity-40'
+                      : showFullFleet 
+                        ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500 shadow-[0_0_6px_rgba(34,211,238,0.3)] font-bold cursor-pointer' 
+                        : 'bg-slate-950/40 text-slate-400 border-slate-700/50 hover:text-slate-200 cursor-pointer'
                   }`}
                 >
                   {showFullFleet ? "📡 FLEET ACTIVE" : "👁️ VIEW ALL 10"}
                 </button>
-                {isolatedTarget && (
+                {isolatedTarget && !starlinkOnly && (
                   <button 
                     onClick={() => {
                       setIsolatedTarget(null);
@@ -508,12 +537,12 @@ export default function App() {
             
             <div className="grid grid-cols-1 gap-1 text-xs max-h-48 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-700">
               {HIGH_VALUE_TARGETS.map((target) => {
-                const isActive = showFullFleet || isolatedTarget?.id === target.id;
-                const isSingleActive = isolatedTarget?.id === target.id;
+                const isActive = !starlinkOnly && (showFullFleet || isolatedTarget?.id === target.id);
+                const isSingleActive = !starlinkOnly && isolatedTarget?.id === target.id;
                 return (
                   <button
                     key={target.id}
-                    disabled={showFullFleet}
+                    disabled={showFullFleet || starlinkOnly}
                     onClick={() => {
                       const nextState = isSingleActive ? null : target;
                       setIsolatedTarget(nextState);
@@ -524,11 +553,13 @@ export default function App() {
                       }
                     }}
                     className={`w-full text-left font-mono px-2.5 py-1.5 rounded text-xs transition-all flex items-center justify-between border ${
-                      showFullFleet
-                        ? 'bg-cyan-950/20 text-cyan-400 border-cyan-800/60 cursor-not-allowed opacity-80'
-                        : isSingleActive 
-                          ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.2)] font-semibold cursor-pointer' 
-                          : 'bg-slate-950/30 text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200 cursor-pointer'
+                      starlinkOnly
+                        ? 'bg-slate-950/20 text-slate-500 border-transparent cursor-not-allowed opacity-45'
+                        : showFullFleet
+                          ? 'bg-cyan-950/20 text-cyan-400 border-cyan-800/60 cursor-not-allowed opacity-80'
+                          : isSingleActive 
+                            ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.2)] font-semibold cursor-pointer' 
+                            : 'bg-slate-950/30 text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200 cursor-pointer'
                     }`}
                   >
                     <span>{target.label}</span>
