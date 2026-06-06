@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=ACTIVE&FORMAT=JSON-PRETTY');
+    const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=json-pretty');
     if (!response.ok) {
       throw new Error(`CelesTrak error code: ${response.status}`);
     }
