@@ -262,70 +262,84 @@ export default function RadarCanvas({
 
       satellites.forEach((sat, idx) => {
         try {
+          const line1 = sat.TLE_LINE1;
+          const line2 = sat.TLE_LINE2;
+          const objectId = sat.OBJECT_ID || `CAT-${sat.NORAD_CAT_ID}`;
+          const displayName = sat.OBJECT_NAME || objectId;
+
           if (!sat.satrec) {
-            if (sat.TLE_LINE1 && sat.TLE_LINE2) {
-              sat.satrec = twoline2satrec(sat.TLE_LINE1, sat.TLE_LINE2);
+            if (line1 && line2) {
+              sat.satrec = twoline2satrec(line1, line2);
             } else {
               sat.satrec = json2satrec(sat);
             }
           }
+
           const posVel = propagate(sat.satrec, date);
-          if (posVel && posVel.position) {
-            const posEci = posVel.position;
-            const velEci = posVel.velocity;
-
-            // Skip if calculations return NaN
-            if (
-              isNaN(posEci.x) || isNaN(posEci.y) || isNaN(posEci.z) ||
-              (velEci && (isNaN(velEci.x) || isNaN(velEci.y) || isNaN(velEci.z)))
-            ) {
-              return;
-            }
-
-            // Earth radius approx 6378.137 km
-            const earthRadiusKm = 6378.137;
-            const satScale = r / earthRadiusKm;
-
-            // Convert to 3D pixels coordinates
-            const sx = posEci.x * satScale;
-            const sy = posEci.y * satScale;
-            const sz = posEci.z * satScale;
-
-            const pt = project(sx, sy, sz);
-
-            // Classify category by name/properties to assign distinct glowing colors
-            let color = '#ff3b30'; // Red for Space Debris/Other
-            if (sat.CLASSIFICATION_TYPE === 'U') {
-              color = '#00f0ff'; // Bright terminal cyan for Unclassified/Default GP
-            } else if (sat.OBJECT_NAME.includes('STARLINK') || sat.OBJECT_NAME.includes('ONEWEB') || sat.OBJECT_NAME.includes('GLOBSTAR')) {
-              color = '#00f0ff'; // Cyan for Communication
-            } else if (sat.OBJECT_NAME.includes('GPS') || sat.OBJECT_NAME.includes('GLONASS') || sat.OBJECT_NAME.includes('GALILEO') || sat.OBJECT_NAME.includes('BEIDOU')) {
-              color = '#00ff66'; // Green for Navigation
-            } else if (sat.OBJECT_NAME.includes('NOAA') || sat.OBJECT_NAME.includes('METEOR') || sat.OBJECT_NAME.includes('ISS')) {
-              color = '#ffb300'; // Yellow for Science / Space station
-            }
-
-            // Fallback lat/lon checking
-            const gd = eciToGeodetic(posEci, gmst);
-            const latVal = (gd && !isNaN(gd.latitude)) ? degreesLat(gd.latitude).toFixed(4) : '0.0000';
-            const lonVal = (gd && !isNaN(gd.longitude)) ? degreesLong(gd.longitude).toFixed(4) : '0.0000';
-
-            projectedSats.push({
-              x: pt.x,
-              y: pt.y,
-              z: pt.z,
-              color,
-              satData: {
-                name: sat.OBJECT_NAME,
-                operationalStatus: sat.OBJECT_NAME.includes('DEB') || sat.OBJECT_NAME.includes('R/B') ? 'DEBRIS' : 'OPERATIONAL',
-                altitude: Math.round(Math.sqrt(posEci.x * posEci.x + posEci.y * posEci.y + posEci.z * posEci.z) - earthRadiusKm),
-                velocity: Math.sqrt(velEci.x * velEci.x + velEci.y * velEci.y + velEci.z * velEci.z).toFixed(2),
-                lat: latVal,
-                lon: lonVal,
-                color
-              }
-            });
+          // Catch decayed or expired decayed orbits returning NaN / null
+          if (!posVel || !posVel.position || isNaN(posVel.position.x) || isNaN(posVel.position.y) || isNaN(posVel.position.z)) {
+            return;
           }
+
+          const posEci = posVel.position;
+          const velEci = posVel.velocity;
+
+          // Double check velocities for NaN
+          if (velEci && (isNaN(velEci.x) || isNaN(velEci.y) || isNaN(velEci.z))) {
+            return;
+          }
+
+          // Earth radius approx 6378.137 km
+          const earthRadiusKm = 6378.137;
+          const satScale = r / earthRadiusKm;
+
+          // Convert to 3D pixels coordinates
+          const sx = posEci.x * satScale;
+          const sy = posEci.y * satScale;
+          const sz = posEci.z * satScale;
+
+          const pt = project(sx, sy, sz);
+
+          // Category/Color-Coding logic matching a debris-heavy dataset
+          let color = '#00f0ff'; // Default crisp terminal cyan
+          const nameUpper = displayName.toUpperCase();
+          const isDebris = 
+            nameUpper.includes('DEBRIS') || 
+            nameUpper.includes('R/B') || 
+            nameUpper.includes('COOLANT') || 
+            nameUpper.includes('FRAG');
+
+          if (isDebris) {
+            // Pulse warning color: hot amber (interpolating red/orange)
+            const pulse = Math.abs(Math.sin(Date.now() * 0.003 + idx));
+            const red = Math.floor(255);
+            const green = Math.floor(100 + pulse * 60);
+            color = `rgba(${red}, ${green}, 0, ${0.6 + pulse * 0.4})`;
+          } else {
+            // For all other objects, default to a crisp terminal green or cyan
+            color = nameUpper.includes('STARLINK') ? '#00f0ff' : '#00ff66';
+          }
+
+          // Fallback lat/lon checking
+          const gd = eciToGeodetic(posEci, gmst);
+          const latVal = (gd && !isNaN(gd.latitude)) ? degreesLat(gd.latitude).toFixed(4) : '0.0000';
+          const lonVal = (gd && !isNaN(gd.longitude)) ? degreesLong(gd.longitude).toFixed(4) : '0.0000';
+
+          projectedSats.push({
+            x: pt.x,
+            y: pt.y,
+            z: pt.z,
+            color,
+            satData: {
+              name: displayName,
+              operationalStatus: isDebris ? 'DEBRIS' : 'OPERATIONAL',
+              altitude: Math.round(Math.sqrt(posEci.x * posEci.x + posEci.y * posEci.y + posEci.z * posEci.z) - earthRadiusKm),
+              velocity: velEci ? Math.sqrt(velEci.x * velEci.x + velEci.y * velEci.y + velEci.z * velEci.z).toFixed(2) : '0.00',
+              lat: latVal,
+              lon: lonVal,
+              color
+            }
+          });
         } catch (e) {
           // Skip erroneous calculations
         }
