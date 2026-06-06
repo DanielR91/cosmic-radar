@@ -88,24 +88,34 @@ export default function App() {
   // Fetch active satellites
   const fetchSatellites = async () => {
     setLoading(true);
-    addLog('DOWNLINKING ACTIVE SATELLITE BUNDLE...', 'info');
+    addLog('DOWNLINKING ACTIVE TLE BUNDLE...', 'info');
 
     try {
-      // Local static JSON engine
-      const res = await fetch('/satellites.json');
+      // Fetch raw text TLE file
+      const res = await fetch('/satellites.txt');
       if (!res.ok) {
         throw new Error(`Server returned HTTP ${res.status}`);
       }
-      const data = await res.json();
+      const text = await res.text();
       
-      if (Array.isArray(data) && data.length > 0) {
-        setSatellites(data);
-        addLog(`SUCCESSFULLY PARSED ${data.length} SATELLITES FROM LOCAL ENGINE.`, 'success');
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const parsedSatellites = [];
+      for (let i = 0; i + 2 < lines.length; i += 3) {
+        parsedSatellites.push({
+          OBJECT_NAME: lines[i],
+          TLE_LINE1: lines[i+1],
+          TLE_LINE2: lines[i+2]
+        });
+      }
+
+      if (parsedSatellites.length > 0) {
+        setSatellites(parsedSatellites);
+        addLog(`SUCCESSFULLY PARSED ${parsedSatellites.length} TLE SETS FROM TEXT ENGINE.`, 'success');
       } else {
-        throw new Error('Data payload was not an array or empty.');
+        throw new Error('Parsed satellite array is empty.');
       }
     } catch (e) {
-      console.warn('Static fetch failed, utilizing preloaded high-fidelity satellite dataset.', e);
+      console.warn('Text fetch failed, utilizing preloaded high-fidelity satellite dataset.', e);
       setSatellites(FALLBACK_SATELLITES);
       addLog(`LOCAL FILE OFFLINE. FALLBACK TO LOCALLY INDEXED CORE CONSTELLATIONS.`, 'warning');
       addLog(`LOADED ${FALLBACK_SATELLITES.length} HIGH-PRECISION SEED ELEMENTS.`, 'success');
@@ -130,23 +140,25 @@ export default function App() {
   const filteredSatellites = useMemo(() => {
     return satellites.filter((sat) => {
       // Name Search query
-      const matchesSearch = sat.OBJECT_NAME.toLowerCase().includes(searchQuery.toLowerCase());
+      const name = (sat.OBJECT_NAME || "").toLowerCase();
+      const matchesSearch = name.includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
       // Classifications
       if (selectedFilter === 'ALL') return true;
-      if (selectedFilter === 'COMMS') {
-        return sat.OBJECT_NAME.includes('STARLINK') || sat.OBJECT_NAME.includes('ONEWEB') || sat.OBJECT_NAME.includes('GLOBSTAR');
-      }
-      if (selectedFilter === 'NAV') {
-        return sat.OBJECT_NAME.includes('GPS') || sat.OBJECT_NAME.includes('GLONASS') || sat.OBJECT_NAME.includes('GALILEO') || sat.OBJECT_NAME.includes('BEIDOU');
-      }
-      if (selectedFilter === 'SCIENTIFIC') {
-        return sat.OBJECT_NAME.includes('ISS') || sat.OBJECT_NAME.includes('TIANGONG') || sat.OBJECT_NAME.includes('HST') || sat.OBJECT_NAME.includes('NOAA') || sat.OBJECT_NAME.includes('METEOR');
-      }
-      if (selectedFilter === 'DEBRIS') {
-        return sat.OBJECT_NAME.includes('DEB') || sat.OBJECT_NAME.includes('R/B');
-      }
+      
+      const isComms = name.includes('starlink') || name.includes('oneweb') || name.includes('globstar');
+      const isNav = name.includes('gps') || name.includes('navstar') || name.includes('galileo') || name.includes('beidou') || name.includes('glonass');
+      const isDebris = name.includes('debris') || name.includes('r/b') || name.includes('coolant') || name.includes('frag');
+      
+      // Default to Science/Weather if not matching Comms, Nav, or Debris
+      const isSciWeather = name.includes('hst') || name.includes('hubble') || name.includes('iss') || name.includes('noaa') || name.includes('terra') || name.includes('aqua') || name.includes('goes') || name.includes('metop') || (!isComms && !isNav && !isDebris);
+
+      if (selectedFilter === 'COMMS') return isComms;
+      if (selectedFilter === 'NAV') return isNav;
+      if (selectedFilter === 'DEBRIS') return isDebris;
+      if (selectedFilter === 'SCIENTIFIC') return isSciWeather;
+
       return true;
     });
   }, [satellites, searchQuery, selectedFilter]);
