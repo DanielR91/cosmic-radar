@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { twoline2satrec } from '../../node_modules/satellite.js/dist/io.js';
+import { twoline2satrec, json2satrec } from '../../node_modules/satellite.js/dist/io.js';
 import { propagate, gstime } from '../../node_modules/satellite.js/dist/propagation.js';
 import { eciToGeodetic, degreesLat, degreesLong } from '../../node_modules/satellite.js/dist/transforms.js';
 
@@ -263,12 +263,24 @@ export default function RadarCanvas({
       satellites.forEach((sat, idx) => {
         try {
           if (!sat.satrec) {
-            sat.satrec = twoline2satrec(sat.TLE_LINE1, sat.TLE_LINE2);
+            if (sat.TLE_LINE1 && sat.TLE_LINE2) {
+              sat.satrec = twoline2satrec(sat.TLE_LINE1, sat.TLE_LINE2);
+            } else {
+              sat.satrec = json2satrec(sat);
+            }
           }
           const posVel = propagate(sat.satrec, date);
           if (posVel && posVel.position) {
             const posEci = posVel.position;
             const velEci = posVel.velocity;
+
+            // Skip if calculations return NaN
+            if (
+              isNaN(posEci.x) || isNaN(posEci.y) || isNaN(posEci.z) ||
+              (velEci && (isNaN(velEci.x) || isNaN(velEci.y) || isNaN(velEci.z)))
+            ) {
+              return;
+            }
 
             // Earth radius approx 6378.137 km
             const earthRadiusKm = 6378.137;
@@ -281,15 +293,22 @@ export default function RadarCanvas({
 
             const pt = project(sx, sy, sz);
 
-            // Classify category by name to assign distinct glowing colors
+            // Classify category by name/properties to assign distinct glowing colors
             let color = '#ff3b30'; // Red for Space Debris/Other
-            if (sat.OBJECT_NAME.includes('STARLINK') || sat.OBJECT_NAME.includes('ONEWEB') || sat.OBJECT_NAME.includes('GLOBSTAR')) {
+            if (sat.CLASSIFICATION_TYPE === 'U') {
+              color = '#00f0ff'; // Bright terminal cyan for Unclassified/Default GP
+            } else if (sat.OBJECT_NAME.includes('STARLINK') || sat.OBJECT_NAME.includes('ONEWEB') || sat.OBJECT_NAME.includes('GLOBSTAR')) {
               color = '#00f0ff'; // Cyan for Communication
             } else if (sat.OBJECT_NAME.includes('GPS') || sat.OBJECT_NAME.includes('GLONASS') || sat.OBJECT_NAME.includes('GALILEO') || sat.OBJECT_NAME.includes('BEIDOU')) {
               color = '#00ff66'; // Green for Navigation
             } else if (sat.OBJECT_NAME.includes('NOAA') || sat.OBJECT_NAME.includes('METEOR') || sat.OBJECT_NAME.includes('ISS')) {
               color = '#ffb300'; // Yellow for Science / Space station
             }
+
+            // Fallback lat/lon checking
+            const gd = eciToGeodetic(posEci, gmst);
+            const latVal = (gd && !isNaN(gd.latitude)) ? degreesLat(gd.latitude).toFixed(4) : '0.0000';
+            const lonVal = (gd && !isNaN(gd.longitude)) ? degreesLong(gd.longitude).toFixed(4) : '0.0000';
 
             projectedSats.push({
               x: pt.x,
@@ -298,11 +317,11 @@ export default function RadarCanvas({
               color,
               satData: {
                 name: sat.OBJECT_NAME,
-                operationalStatus: sat.OBJECT_NAME.includes('DEB') ? 'DEBRIS' : 'OPERATIONAL',
+                operationalStatus: sat.OBJECT_NAME.includes('DEB') || sat.OBJECT_NAME.includes('R/B') ? 'DEBRIS' : 'OPERATIONAL',
                 altitude: Math.round(Math.sqrt(posEci.x * posEci.x + posEci.y * posEci.y + posEci.z * posEci.z) - earthRadiusKm),
                 velocity: Math.sqrt(velEci.x * velEci.x + velEci.y * velEci.y + velEci.z * velEci.z).toFixed(2),
-                lat: degreesLat(eciToGeodetic(posEci, gmst).latitude).toFixed(4),
-                lon: degreesLong(eciToGeodetic(posEci, gmst).longitude).toFixed(4),
+                lat: latVal,
+                lon: lonVal,
                 color
               }
             });
