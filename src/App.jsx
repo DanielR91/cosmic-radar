@@ -67,6 +67,19 @@ const FALLBACK_SATELLITES = [
   }
 ];
 
+const HIGH_VALUE_TARGETS = [
+  { id: 'iss', search: 'iss', label: '🛰️ ISS (Space Station)' },
+  { id: 'hubble', search: 'hst', label: '🔭 Hubble Space Telescope' },
+  { id: 'tiangong', search: 'tiangong', label: '🇨🇳 Tiangong Station' },
+  { id: 'noaa', search: 'noaa-19', label: '🌤️ NOAA-19 Weather' },
+  { id: 'envisat', search: 'envisat', label: '🌍 Envisat Monitor' },
+  { id: 'terra', search: 'terra', label: '🌱 NASA Terra' },
+  { id: 'aqua', search: 'aqua', label: '💧 NASA Aqua' },
+  { id: 'gps', search: 'gps biir', label: '🛰️ GPS Navigation' },
+  { id: 'galileo', search: 'galileo-24', label: '🇪🇺 Galileo Navigation' },
+  { id: 'starlink', search: 'starlink-1007', label: '📡 Starlink Node' }
+];
+
 export default function App() {
   const [viewMode, setViewMode] = useState('earth'); // 'earth' or 'solar'
   const [satellites, setSatellites] = useState([]);
@@ -78,6 +91,7 @@ export default function App() {
   const [hoveredData, setHoveredData] = useState(null);
   const [selectedSatId, setSelectedSatId] = useState(null);
   const [logMessages, setLogMessages] = useState([]);
+  const [isolatedTarget, setIsolatedTarget] = useState(null);
 
   // Logging utility
   const addLog = useCallback((text, type = 'info') => {
@@ -157,8 +171,14 @@ export default function App() {
   // Filtered Satellites
   const filteredSatellites = useMemo(() => {
     return satellites.filter((sat) => {
-      // Name Search query
       const name = (sat.OBJECT_NAME || "").toLowerCase();
+
+      // If isolatedTarget is selected, bypass normal filters
+      if (isolatedTarget) {
+        return name.includes(isolatedTarget.search.toLowerCase());
+      }
+
+      // Name Search query
       const matchesSearch = name.includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
@@ -186,7 +206,7 @@ export default function App() {
 
       return true;
     });
-  }, [satellites, searchQuery, selectedFilter]);
+  }, [satellites, searchQuery, selectedFilter, isolatedTarget]);
 
   // Telemetry details representation
   const activeTelemetry = useMemo(() => {
@@ -437,6 +457,54 @@ export default function App() {
                 }}
                 className="flex-1 accent-terminal-cyan h-1 bg-terminal-border cursor-pointer rounded-lg appearance-none"
               />
+            </div>
+          </div>
+
+          {/* F: High-Value Targets Tracker */}
+          <div className="mt-4 p-4 bg-slate-900/80 border border-slate-700/50 rounded-lg backdrop-blur-md shadow-xl text-left">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400 font-mono">
+                🎯 High-Value Targets
+              </h3>
+              {isolatedTarget && (
+                <button 
+                  onClick={() => {
+                    setIsolatedTarget(null);
+                    addLog('CLEARED ISOLATED TARGET SELECTION.', 'info');
+                  }}
+                  className="text-[10px] px-2 py-0.5 bg-red-950/40 hover:bg-red-900/60 border border-red-700/40 rounded text-red-400 font-mono transition-colors cursor-pointer"
+                >
+                  CLEAR FOCUS
+                </button>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 gap-1 text-xs max-h-48 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-700">
+              {HIGH_VALUE_TARGETS.map((target) => {
+                const isActive = isolatedTarget?.id === target.id;
+                return (
+                  <button
+                    key={target.id}
+                    onClick={() => {
+                      const nextState = isActive ? null : target;
+                      setIsolatedTarget(nextState);
+                      if (nextState) {
+                        addLog(`ISOLATING HIGH-VALUE TARGET: ${target.label}`, 'success');
+                      } else {
+                        addLog('CLEARED ISOLATED TARGET SELECTION.', 'info');
+                      }
+                    }}
+                    className={`w-full text-left font-mono px-2.5 py-1.5 rounded text-xs transition-all flex items-center justify-between border cursor-pointer ${
+                      isActive 
+                        ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.2)] font-semibold' 
+                        : 'bg-slate-950/30 text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200'
+                    }`}
+                  >
+                    <span>{target.label}</span>
+                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
