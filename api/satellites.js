@@ -9,14 +9,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=json-pretty');
+    const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=json-pretty');
     if (!response.ok) {
       throw new Error(`CelesTrak error code: ${response.status}`);
     }
     const data = await response.json();
     res.status(200).json(data);
   } catch (err) {
-    console.error('CelesTrak proxy failure:', err);
-    res.status(500).json({ error: 'Failed to proxy CelesTrak satellite elements.', details: err.message });
+    console.error('CelesTrak proxy failure, returning fallback container:', err);
+    res.status(200).json([]);
   }
 }
