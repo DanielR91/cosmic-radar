@@ -91,34 +91,54 @@ export default function App() {
     addLog('DOWNLINKING ACTIVE TLE BUNDLE...', 'info');
 
     try {
-      // Fetch raw text TLE file
-      const res = await fetch('/satellites.txt');
-      if (!res.ok) {
-        throw new Error(`Server returned HTTP ${res.status}`);
-      }
-      const text = await res.text();
+      const response = await fetch('/satellites.txt');
+      if (!response.ok) throw new Error("Failed to load TLE text asset");
       
+      const text = await response.text();
+      // Split by newlines and clean up empty rows
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      
       const parsedSatellites = [];
+      
+      // Step through the array in triplets (Name, Line 1, Line 2)
       for (let i = 0; i + 2 < lines.length; i += 3) {
-        parsedSatellites.push({
-          OBJECT_NAME: lines[i],
-          TLE_LINE1: lines[i+1],
-          TLE_LINE2: lines[i+2]
-        });
+        const rawName = lines[i];
+        const line1 = lines[i + 1];
+        const line2 = lines[i + 2];
+        
+        if (line1.startsWith('1') && line2.startsWith('2')) {
+          const lowerName = rawName.toLowerCase();
+          let category = 'Science/Weather'; // Default home
+
+          // Robust string matching based on our exact txt contents
+          if (lowerName.includes('starlink') || lowerName.includes('coms') || lowerName.includes('satcom')) {
+            category = 'Communications';
+          } else if (lowerName.includes('gps') || lowerName.includes('galileo') || lowerName.includes('glonass') || lowerName.includes('beidou')) {
+            category = 'Navigation';
+          } else if (lowerName.includes('iss') || lowerName.includes('hubble') || lowerName.includes('tiangong') || lowerName.includes('noaa') || lowerName.includes('meteor')) {
+            category = 'Science/Weather';
+          } else if (lowerName.includes('debris') || lowerName.includes('frag') || lowerName.includes('r/b')) {
+            category = 'Debris';
+          }
+
+          parsedSatellites.push({
+            OBJECT_NAME: rawName,
+            TLE_LINE1: line1,
+            TLE_LINE2: line2,
+            category: category // Attach the category directly to the object
+          });
+        }
       }
 
       if (parsedSatellites.length > 0) {
         setSatellites(parsedSatellites);
         addLog(`SUCCESSFULLY PARSED ${parsedSatellites.length} TLE SETS FROM TEXT ENGINE.`, 'success');
-      } else {
-        throw new Error('Parsed satellite array is empty.');
+        console.log(`Successfully mapped ${parsedSatellites.length} operational vectors.`);
       }
-    } catch (e) {
-      console.warn('Text fetch failed, utilizing preloaded high-fidelity satellite dataset.', e);
+    } catch (error) {
+      console.error("TLE Engine Parse Failure:", error);
+      addLog(`TLE ENGINE PARSE FAILURE. LOADING FALLBACK DATA.`, 'error');
       setSatellites(FALLBACK_SATELLITES);
-      addLog(`LOCAL FILE OFFLINE. FALLBACK TO LOCALLY INDEXED CORE CONSTELLATIONS.`, 'warning');
-      addLog(`LOADED ${FALLBACK_SATELLITES.length} HIGH-PRECISION SEED ELEMENTS.`, 'success');
     } finally {
       setLoading(false);
     }
@@ -126,8 +146,6 @@ export default function App() {
 
   useEffect(() => {
     fetchSatellites();
-    addLog('COSMICRADAR INITIALIZATION COMPLETED.', 'success');
-    addLog('SGP4 MATH SOLVER COMPILING...', 'info');
   }, []);
 
   // Highlight satellite or search select
@@ -147,17 +165,24 @@ export default function App() {
       // Classifications
       if (selectedFilter === 'ALL') return true;
       
-      const isComms = name.includes('starlink') || name.includes('oneweb') || name.includes('globstar');
-      const isNav = name.includes('gps') || name.includes('navstar') || name.includes('galileo') || name.includes('beidou') || name.includes('glonass');
-      const isDebris = name.includes('debris') || name.includes('r/b') || name.includes('coolant') || name.includes('frag');
-      
-      // Default to Science/Weather if not matching Comms, Nav, or Debris
-      const isSciWeather = name.includes('hst') || name.includes('hubble') || name.includes('iss') || name.includes('noaa') || name.includes('terra') || name.includes('aqua') || name.includes('goes') || name.includes('metop') || (!isComms && !isNav && !isDebris);
+      let category = sat.category;
+      if (!category) {
+        // Fallback categorization for static preloaded elements
+        if (name.includes('starlink') || name.includes('coms') || name.includes('satcom')) {
+          category = 'Communications';
+        } else if (name.includes('gps') || name.includes('galileo') || name.includes('glonass') || name.includes('beidou')) {
+          category = 'Navigation';
+        } else if (name.includes('debris') || name.includes('frag') || name.includes('r/b')) {
+          category = 'Debris';
+        } else {
+          category = 'Science/Weather';
+        }
+      }
 
-      if (selectedFilter === 'COMMS') return isComms;
-      if (selectedFilter === 'NAV') return isNav;
-      if (selectedFilter === 'DEBRIS') return isDebris;
-      if (selectedFilter === 'SCIENTIFIC') return isSciWeather;
+      if (selectedFilter === 'COMMS') return category === 'Communications';
+      if (selectedFilter === 'NAV') return category === 'Navigation';
+      if (selectedFilter === 'DEBRIS') return category === 'Debris';
+      if (selectedFilter === 'SCIENTIFIC') return category === 'Science/Weather';
 
       return true;
     });
