@@ -92,6 +92,7 @@ export default function App() {
   const [selectedSatId, setSelectedSatId] = useState(null);
   const [logMessages, setLogMessages] = useState([]);
   const [isolatedTarget, setIsolatedTarget] = useState(null);
+  const [showFullFleet, setShowFullFleet] = useState(false);
 
   // Logging utility
   const addLog = useCallback((text, type = 'info') => {
@@ -173,12 +174,17 @@ export default function App() {
     return satellites.filter((sat) => {
       const name = (sat.OBJECT_NAME || "").toLowerCase();
 
-      // If isolatedTarget is selected, bypass normal filters
+      // Priority 1: Show full fleet
+      if (showFullFleet) {
+        return HIGH_VALUE_TARGETS.some(t => name.includes(t.search.toLowerCase()));
+      }
+
+      // Priority 2: Single isolated target
       if (isolatedTarget) {
         return name.includes(isolatedTarget.search.toLowerCase());
       }
 
-      // Name Search query
+      // Priority 3: Normal filters
       const matchesSearch = name.includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
@@ -206,7 +212,7 @@ export default function App() {
 
       return true;
     });
-  }, [satellites, searchQuery, selectedFilter, isolatedTarget]);
+  }, [satellites, searchQuery, selectedFilter, isolatedTarget, showFullFleet]);
 
   // Telemetry details representation
   const activeTelemetry = useMemo(() => {
@@ -462,31 +468,54 @@ export default function App() {
 
           {/* F: High-Value Targets Tracker */}
           <div className="mt-4 p-4 bg-slate-900/80 border border-slate-700/50 rounded-lg backdrop-blur-md shadow-xl text-left">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3 gap-2">
               <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400 font-mono">
                 🎯 High-Value Targets
               </h3>
-              {isolatedTarget && (
-                <button 
+              <div className="flex gap-1.5">
+                <button
                   onClick={() => {
-                    setIsolatedTarget(null);
-                    addLog('CLEARED ISOLATED TARGET SELECTION.', 'info');
+                    const nextState = !showFullFleet;
+                    setShowFullFleet(nextState);
+                    setIsolatedTarget(null); // Clear single focus when toggling fleet view
+                    if (nextState) {
+                      addLog('FLEET VIEW ISOLATION ENABLED.', 'success');
+                    } else {
+                      addLog('FLEET VIEW ISOLATION DISABLED.', 'info');
+                    }
                   }}
-                  className="text-[10px] px-2 py-0.5 bg-red-950/40 hover:bg-red-900/60 border border-red-700/40 rounded text-red-400 font-mono transition-colors cursor-pointer"
+                  className={`text-[10px] px-2 py-0.5 font-mono rounded transition-all border cursor-pointer ${
+                    showFullFleet 
+                      ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500 shadow-[0_0_6px_rgba(34,211,238,0.3)] font-bold' 
+                      : 'bg-slate-950/40 text-slate-400 border-slate-700/50 hover:text-slate-200'
+                  }`}
                 >
-                  CLEAR FOCUS
+                  {showFullFleet ? "📡 FLEET ACTIVE" : "👁️ VIEW ALL 10"}
                 </button>
-              )}
+                {isolatedTarget && (
+                  <button 
+                    onClick={() => {
+                      setIsolatedTarget(null);
+                      addLog('CLEARED ISOLATED TARGET SELECTION.', 'info');
+                    }}
+                    className="text-[10px] px-2 py-0.5 bg-red-950/40 hover:bg-red-900/60 border border-red-700/40 rounded text-red-400 font-mono transition-colors cursor-pointer"
+                  >
+                    CLEAR
+                  </button>
+                )}
+              </div>
             </div>
             
             <div className="grid grid-cols-1 gap-1 text-xs max-h-48 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-700">
               {HIGH_VALUE_TARGETS.map((target) => {
-                const isActive = isolatedTarget?.id === target.id;
+                const isActive = showFullFleet || isolatedTarget?.id === target.id;
+                const isSingleActive = isolatedTarget?.id === target.id;
                 return (
                   <button
                     key={target.id}
+                    disabled={showFullFleet}
                     onClick={() => {
-                      const nextState = isActive ? null : target;
+                      const nextState = isSingleActive ? null : target;
                       setIsolatedTarget(nextState);
                       if (nextState) {
                         addLog(`ISOLATING HIGH-VALUE TARGET: ${target.label}`, 'success');
@@ -494,10 +523,12 @@ export default function App() {
                         addLog('CLEARED ISOLATED TARGET SELECTION.', 'info');
                       }
                     }}
-                    className={`w-full text-left font-mono px-2.5 py-1.5 rounded text-xs transition-all flex items-center justify-between border cursor-pointer ${
-                      isActive 
-                        ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.2)] font-semibold' 
-                        : 'bg-slate-950/30 text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200'
+                    className={`w-full text-left font-mono px-2.5 py-1.5 rounded text-xs transition-all flex items-center justify-between border ${
+                      showFullFleet
+                        ? 'bg-cyan-950/20 text-cyan-400 border-cyan-800/60 cursor-not-allowed opacity-80'
+                        : isSingleActive 
+                          ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.2)] font-semibold cursor-pointer' 
+                          : 'bg-slate-950/30 text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200 cursor-pointer'
                     }`}
                   >
                     <span>{target.label}</span>
