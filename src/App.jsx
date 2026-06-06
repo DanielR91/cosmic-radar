@@ -91,8 +91,8 @@ export default function App() {
     addLog('DOWNLINKING ACTIVE SATELLITE BUNDLE...', 'info');
 
     try {
-      // Proxy endpoint
-      const res = await fetch('/api/satellites');
+      // Local static JSON engine
+      const res = await fetch('/satellites.json');
       if (!res.ok) {
         throw new Error(`Server returned HTTP ${res.status}`);
       }
@@ -100,14 +100,14 @@ export default function App() {
       
       if (Array.isArray(data) && data.length > 0) {
         setSatellites(data);
-        addLog(`SUCCESSFULLY PARSED ${data.length} SATELLITES FROM CELESTRAK.`, 'success');
+        addLog(`SUCCESSFULLY PARSED ${data.length} SATELLITES FROM LOCAL ENGINE.`, 'success');
       } else {
         throw new Error('Data payload was not an array or empty.');
       }
     } catch (e) {
-      console.warn('API fetch failed, utilizing preloaded high-fidelity satellite dataset.', e);
+      console.warn('Static fetch failed, utilizing preloaded high-fidelity satellite dataset.', e);
       setSatellites(FALLBACK_SATELLITES);
-      addLog(`PROXY OFFLINE. FALLBACK TO LOCALLY INDEXED CORE CONSTELLATIONS.`, 'warning');
+      addLog(`LOCAL FILE OFFLINE. FALLBACK TO LOCALLY INDEXED CORE CONSTELLATIONS.`, 'warning');
       addLog(`LOADED ${FALLBACK_SATELLITES.length} HIGH-PRECISION SEED ELEMENTS.`, 'success');
     } finally {
       setLoading(false);
